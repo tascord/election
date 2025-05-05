@@ -1,4 +1,7 @@
-use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+
+use log::{info, trace};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use to_and_fro::ToAndFro;
 
 use crate::{download::Download, process::Process};
@@ -61,7 +64,7 @@ struct PartyPerformance {
     swing_volatility: f32,
 }
 
-#[derive(ToAndFro, Serialize, Deserialize)]
+#[derive(ToAndFro, Serialize)]
 pub enum PartyAffilliation {
     LP,   // Liberal
     LNP,  // Liberal National Party of Queensland
@@ -102,6 +105,18 @@ pub enum PartyAffilliation {
 }
 
 #[derive(ToAndFro, Serialize, Deserialize)]
+pub enum State {
+    ACT,
+    NSW,
+    NT,
+    QLD,
+    SA,
+    TAS,
+    VIC,
+    WA,
+}
+
+#[derive(ToAndFro, Serialize)]
 pub enum Division {
     Bean,
     Canberra,
@@ -256,17 +271,33 @@ pub enum Division {
     Tangney,
 }
 
-#[derive(ToAndFro, Serialize, Deserialize)]
-pub enum State {
-    ACT,
-    NSW,
-    NT,
-    QLD,
-    SA,
-    TAS,
-    VIC,
-    WA,
+impl<'de> Deserialize<'de> for Division {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Division::from_str(&s.chars().filter(|c| c.is_alphabetic()).collect::<String>())
+            .map_err(|e| serde::de::Error::custom(e.to_string()))
+    }
 }
+
+impl<'de> Deserialize<'de> for PartyAffilliation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match PartyAffilliation::from_str(&s) {
+            Ok(pa) => Ok(pa),
+            _ => {
+                trace!("Party {} not identified, maybe they should have custom flowing logic?", s);
+                Ok(Self::NAFD)
+            }
+        }
+    }
+}
+
 
 pub trait Get: Download + Process {
     async fn get(code: usize) -> anyhow::Result<Vec<Self>> {
@@ -275,3 +306,25 @@ pub trait Get: Download + Process {
 }
 
 impl<T> Get for T where T: Download + Process {}
+
+pub trait Named {
+    fn name() -> String;
+}
+
+impl Named for TwoCandidatePreferred {
+    fn name() -> String {
+        "Two Candidate Preferred".to_owned()
+    }
+}
+
+impl Named for FirstPreferences {
+    fn name() -> String {
+        "First Preference".to_owned()
+    }
+}
+
+impl Named for PrefDistribution {
+    fn name() -> String {
+        "Preference Distribution".to_owned()
+    }
+}
